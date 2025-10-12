@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test BabylonJS - Portfolio</title>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            z-index: 1000;
+            max-width: 400px;
+        }
+        #info h2 {
+            margin: 0 0 10px 0;
+            color: #4CAF50;
+        }
+        #info p {
+            margin: 5px 0;
+            font-size: 14px;
+        }
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h2>🧪 Test BabylonJS</h2>
+        <p id="status">Inicializando...</p>
+        <p id="webgl"></p>
+        <p id="engine"></p>
+        <p id="scene"></p>
+        <p id="meshes"></p>
+    </div>
+    <canvas id="renderCanvas"></canvas>
+
+    <script>
+        const statusEl = document.getElementById('status');
+        const webglEl = document.getElementById('webgl');
+        const engineEl = document.getElementById('engine');
+        const sceneEl = document.getElementById('scene');
+        const meshesEl = document.getElementById('meshes');
+
+        function log(element, message, type = 'success') {
+            element.innerHTML = `<span class="${type}">${message}</span>`;
+        }
+
+        try {
+            // Test 1: WebGL
+            const canvas = document.getElementById('renderCanvas');
+            const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            
+            if (gl) {
+                log(webglEl, '✅ WebGL disponible', 'success');
+            } else {
+                log(webglEl, '❌ WebGL NO disponible', 'error');
+                throw new Error('WebGL no soportado');
+            }
+
+            // Test 2: Engine
+            const engine = new BABYLON.Engine(canvas, true);
+            log(engineEl, '✅ Engine creado', 'success');
+
+            // Test 3: Scene
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color4(0.2, 0.2, 0.3, 1);
+            log(sceneEl, '✅ Scene creada', 'success');
+
+            // Test 4: Camera
+            const camera = new BABYLON.ArcRotateCamera(
+                'camera',
+                Math.PI / 2,
+                Math.PI / 3,
+                10,
+                BABYLON.Vector3.Zero(),
+                scene
+            );
+            camera.attachControl(canvas, true);
+
+            // Test 5: Light
+            const light = new BABYLON.HemisphericLight(
+                'light',
+                new BABYLON.Vector3(0, 1, 0),
+                scene
+            );
+            light.intensity = 0.7;
+
+            // Test 6: Meshes
+            const ground = BABYLON.MeshBuilder.CreateGround(
+                'ground',
+                { width: 10, height: 10 },
+                scene
+            );
+            const groundMat = new BABYLON.StandardMaterial('groundMat', scene);
+            groundMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
+            ground.material = groundMat;
+
+            const box = BABYLON.MeshBuilder.CreateBox(
+                'box',
+                { size: 2 },
+                scene
+            );
+            box.position.y = 1;
+            const boxMat = new BABYLON.StandardMaterial('boxMat', scene);
+            boxMat.diffuseColor = new BABYLON.Color3(0.4, 0.6, 0.9);
+            box.material = boxMat;
+
+            const sphere = BABYLON.MeshBuilder.CreateSphere(
+                'sphere',
+                { diameter: 1.5 },
+                scene
+            );
+            sphere.position.x = -3;
+            sphere.position.y = 1;
+            const sphereMat = new BABYLON.StandardMaterial('sphereMat', scene);
+            sphereMat.diffuseColor = new BABYLON.Color3(0.9, 0.4, 0.4);
+            sphere.material = sphereMat;
+
+            const cylinder = BABYLON.MeshBuilder.CreateCylinder(
+                'cylinder',
+                { height: 2, diameter: 1 },
+                scene
+            );
+            cylinder.position.x = 3;
+            cylinder.position.y = 1;
+            const cylMat = new BABYLON.StandardMaterial('cylMat', scene);
+            cylMat.diffuseColor = new BABYLON.Color3(0.4, 0.9, 0.4);
+            cylinder.material = cylMat;
+
+            log(meshesEl, '✅ 4 objetos 3D creados', 'success');
+
+            // Animación simple
+            let angle = 0;
+            scene.registerBeforeRender(() => {
+                angle += 0.01;
+                box.rotation.y = angle;
+                sphere.position.y = 1 + Math.sin(angle * 2) * 0.3;
+                cylinder.rotation.x = angle * 0.5;
+            });
+
+            // Render loop
+            engine.runRenderLoop(() => {
+                scene.render();
+            });
+
+            // Resize
+            window.addEventListener('resize', () => {
+                engine.resize();
+            });
+
+            log(statusEl, '✅ TODO FUNCIONA CORRECTAMENTE', 'success');
+            
+            setTimeout(() => {
+                document.getElementById('info').style.display = 'none';
+            }, 5000);
+
+            console.log('✅ Test BabylonJS completado exitosamente');
+            console.log('Si ves objetos 3D animados, BabylonJS está funcionando perfectamente');
+
+        } catch (error) {
+            log(statusEl, `❌ ERROR: ${error.message}`, 'error');
+            console.error('❌ Error en test BabylonJS:', error);
+        }
+    </script>
+</body>
+</html>
+
