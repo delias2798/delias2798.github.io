@@ -13,7 +13,8 @@ export const SceneConfig = {
         upperRadiusLimit: 20,
         lowerBetaLimit: 0.1,
         upperBetaLimit: Math.PI / 2,
-        focusDistance: 5, // Distancia de la cámara cuando enfoca una pantalla
+        /** Radio al enfocar pantalla (menor = más zoom). 9 ≈ 50% más acercado que 14 */
+        focusDistance: 1,
         animationDuration: 60, // frames (60 = 1 segundo a 60fps)
     },
 
@@ -78,6 +79,14 @@ export const SceneConfig = {
             g: 0.2,
             b: 0.25,
         },
+    },
+
+    // Entorno HDR (IBL + skybox)
+    environment: {
+        hdrUrl: '/ferndale_studio_12_4k.hdr',
+        intensity: 1,
+        skyboxScale: 1000,
+        skyboxBlur: 0.35,
     },
 
     // Configuración de Iluminación

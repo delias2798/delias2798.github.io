@@ -3,13 +3,18 @@ import {
     MeshBuilder,
     StandardMaterial,
     VideoTexture,
+    DynamicTexture,
     Vector3,
     Mesh,
     Color3,
     AbstractMesh,
+    type BaseTexture,
 } from '@babylonjs/core';
-import { AdvancedDynamicTexture, TextBlock, Rectangle } from '@babylonjs/gui';
 import type { Project } from '../types/Project';
+import type { ScreenMediaState } from '../types/ScreenMedia';
+import { localVideoExists } from '../utils/localVideo';
+import { getYoutubeVideoId, isYoutubeUrl } from '../utils/youtube';
+import { ScreenYoutubeOverlay } from './ScreenYoutubeOverlay';
 
 export class ScreenManager {
     private scene: Scene;
@@ -17,138 +22,201 @@ export class ScreenManager {
     private currentIndex: number = 0;
     private screen: Mesh;
     private videoTexture?: VideoTexture;
+    private screenTexture?: DynamicTexture;
+    /** Textura base del plano — nunca se deja el material sin textura */
+    private idleTexture: DynamicTexture;
     private material: StandardMaterial;
-    private textPlane?: Mesh;
-    private advancedTexture?: AdvancedDynamicTexture;
     private onProjectChangeCallback?: (project: Project, index: number) => void;
+    private onMediaStateChangeCallback?: (state: ScreenMediaState) => void;
+    private loadGeneration = 0;
+    private youtubeOverlay: ScreenYoutubeOverlay;
 
-    constructor(scene: Scene, projects: Project[]) {
+    constructor(scene: Scene, projects: Project[], overlayContainer: HTMLElement) {
         this.scene = scene;
         this.projects = projects;
-        
-        // Crear la pantalla principal
+
         this.screen = this.createScreen();
-        this.material = new StandardMaterial('screenMaterial', scene);
+        this.material = new StandardMaterial('portfolioScreenMaterial', scene);
+        this.material.specularColor = new Color3(0.1, 0.1, 0.1);
+        this.material.backFaceCulling = false;
         this.screen.material = this.material;
 
-        // Crear el plano de texto lateral
-        this.createTextPlane();
+        this.idleTexture = this.createIdleTexture();
+        this.applyScreenTexture(this.idleTexture);
 
-        // Cargar el primer proyecto
-        this.loadProject(0);
+        this.youtubeOverlay = new ScreenYoutubeOverlay(
+            scene,
+            this.screen,
+            overlayContainer
+        );
+
+        void this.loadProject(0);
     }
 
-    /**
-     * Crear la pantalla 3D
-     */
     private createScreen(): Mesh {
-        // Aspect ratio 16:9
         const width = 4;
         const height = width * (9 / 16);
-        
-        const screen = MeshBuilder.CreatePlane('screen', {
-            width: width,
-            height: height
-        }, this.scene);
 
-        // Posicionar la pantalla (frente al mueble)
+        const screen = MeshBuilder.CreatePlane(
+            'portfolioScreen',
+            { width, height },
+            this.scene
+        );
+
         screen.position = new Vector3(0, 2, -3);
-        screen.rotation.y = Math.PI; // Girar hacia la cámara
-        screen.isPickable = true; // Pickable para el sistema de enfoque de cámara
+        screen.rotation.y = Math.PI;
+        screen.isPickable = true;
 
         return screen;
     }
 
-    /**
-     * Crear plano de texto lateral con GUI
-     */
-    private createTextPlane(): void {
-        // Crear un plano para el texto
-        this.textPlane = MeshBuilder.CreatePlane('textPlane', {
-            width: 2,
-            height: 1.5
-        }, this.scene);
+    private createIdleTexture(): DynamicTexture {
+        const tex = new DynamicTexture(
+            'screenIdle',
+            { width: 1280, height: 720 },
+            this.scene,
+            false
+        );
+        const ctx = tex.getContext() as CanvasRenderingContext2D;
+        ctx.fillStyle = '#12121a';
+        ctx.fillRect(0, 0, 1280, 720);
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.35)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(24, 24, 1232, 672);
+        tex.update();
+        return tex;
+    }
 
-        // Posicionar a la derecha de la pantalla
-        this.textPlane.position = new Vector3(3.5, 2, -3);
-        this.textPlane.rotation.y = Math.PI;
-        this.textPlane.isPickable = false; // No interferir con interacciones
+    private emitMedia(state: ScreenMediaState): void {
+        this.onMediaStateChangeCallback?.(state);
+    }
 
-        // Crear textura GUI avanzada
-        this.advancedTexture = AdvancedDynamicTexture.CreateForMesh(this.textPlane, 512, 384);
-
-        // Container principal
-        const container = new Rectangle('textContainer');
-        container.width = 1;
-        container.height = 1;
-        container.thickness = 0;
-        container.background = 'rgba(0, 0, 0, 0.7)';
-        container.cornerRadius = 10;
-        this.advancedTexture.addControl(container);
-
-        // El texto se actualizará en updateTextPlane()
+    private applyScreenTexture(texture: BaseTexture): void {
+        this.material.diffuseTexture = texture;
+        this.material.diffuseColor = new Color3(1, 1, 1);
+        this.material.emissiveColor = new Color3(0, 0, 0);
+        this.material.specularColor = new Color3(0.2, 0.2, 0.2);
     }
 
     /**
-     * Actualizar el contenido del plano de texto
+     * Aplica la textura nueva y solo entonces libera la anterior (el plano no parpadea).
      */
-    private updateTextPlane(project: Project): void {
-        if (!this.advancedTexture) return;
+    private swapScreenTexture(
+        nextTexture: BaseTexture,
+        nextVideo?: VideoTexture,
+        nextScreen?: DynamicTexture
+    ): void {
+        const previous = this.material.diffuseTexture;
+        const prevVideo = this.videoTexture;
+        const prevScreen = this.screenTexture;
 
-        // Limpiar controles anteriores
-        this.advancedTexture.getChildren().forEach(child => {
-            if (child instanceof TextBlock) {
-                this.advancedTexture!.removeControl(child);
-            }
-        });
-
-        // Título
-        const title = new TextBlock('title', project.title);
-        title.color = 'white';
-        title.fontSize = 36;
-        title.fontWeight = 'bold';
-        title.textWrapping = true;
-        title.top = -100;
-        title.height = '80px';
-        this.advancedTexture.addControl(title);
-
-        // Descripción
-        const description = new TextBlock('description', project.description);
-        description.color = '#cccccc';
-        description.fontSize = 20;
-        description.textWrapping = true;
-        description.top = 20;
-        description.height = '120px';
-        this.advancedTexture.addControl(description);
-
-        // Fecha
-        const date = new TextBlock('date', project.date);
-        date.color = '#888888';
-        date.fontSize = 16;
-        date.top = 140;
-        date.height = '30px';
-        this.advancedTexture.addControl(date);
-    }
-
-    /**
-     * Cargar un proyecto específico
-     */
-    private loadProject(index: number): void {
-        if (index < 0 || index >= this.projects.length) return;
-
-        this.currentIndex = index;
-        const project = this.projects[index];
-
-        // Limpiar video anterior
-        if (this.videoTexture) {
-            this.videoTexture.dispose();
-            this.videoTexture = undefined;
+        if (nextVideo) {
+            this.youtubeOverlay.hide();
         }
 
+        this.applyScreenTexture(nextTexture);
+        this.videoTexture = nextVideo;
+        this.screenTexture = nextScreen;
+
+        if (prevVideo && prevVideo !== nextTexture) {
+            prevVideo.dispose();
+        }
+        if (
+            prevScreen &&
+            prevScreen !== nextTexture &&
+            prevScreen !== this.idleTexture
+        ) {
+            prevScreen.dispose();
+        }
+        if (
+            previous &&
+            previous !== nextTexture &&
+            previous !== prevVideo &&
+            previous !== prevScreen &&
+            previous !== this.idleTexture
+        ) {
+            previous.dispose();
+        }
+    }
+
+    private orientVideoTexture(texture: VideoTexture): void {
+        texture.vScale = -1;
+    }
+
+    private showYoutubeEmbed(
+        project: Project,
+        videoId: string,
+        generation: number
+    ): void {
+        if (generation !== this.loadGeneration) return;
+
+        const tex = new DynamicTexture(
+            `screenYoutubeBg_${project.id}_${generation}`,
+            { width: 16, height: 9 },
+            this.scene,
+            false
+        );
+        const ctx = tex.getContext() as CanvasRenderingContext2D;
+        ctx.fillStyle = '#0a0a0f';
+        ctx.fillRect(0, 0, 16, 9);
+        tex.update();
+
+        this.swapScreenTexture(tex, undefined, tex);
+        this.youtubeOverlay.show(videoId);
+        this.emitMedia({ mode: 'youtube-embed', youtubeVideoId: videoId });
+    }
+
+    private showPlaceholder(project: Project, generation: number): void {
+        this.youtubeOverlay.hide();
+
+        const tex = new DynamicTexture(
+            `screenPlaceholder_${project.id}_${generation}`,
+            { width: 1280, height: 720 },
+            this.scene,
+            false
+        );
+
+        const ctx = tex.getContext() as CanvasRenderingContext2D;
+        ctx.fillStyle = '#14141f';
+        ctx.fillRect(0, 0, 1280, 720);
+        ctx.fillStyle = '#6366f1';
+        ctx.font = 'bold 48px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const title =
+            project.title.length > 40
+                ? `${project.title.slice(0, 38)}…`
+                : project.title;
+        ctx.fillText(title, 640, 300);
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '32px system-ui, sans-serif';
+        ctx.fillText('No local video', 640, 380);
+
+        tex.update();
+        this.swapScreenTexture(tex, undefined, tex);
+        this.emitMedia({ mode: 'placeholder' });
+    }
+
+    private resolveYoutubeVideoId(project: Project): string | null {
+        return (
+            getYoutubeVideoId(project.externalUrl) ??
+            getYoutubeVideoId(project.videoUrl)
+        );
+    }
+
+    private fallbackToExternalVideo(project: Project, generation: number): void {
+        const youtubeVideoId = this.resolveYoutubeVideoId(project);
+        if (youtubeVideoId) {
+            this.showYoutubeEmbed(project, youtubeVideoId, generation);
+            return;
+        }
+        this.showPlaceholder(project, generation);
+    }
+
+    private loadLocalVideo(project: Project, generation: number): void {
         try {
-            // Crear nueva textura de video
-            this.videoTexture = new VideoTexture(
-                'videoTexture',
+            const videoTexture = new VideoTexture(
+                `screenVideo_${project.id}_${generation}`,
                 project.videoUrl,
                 this.scene,
                 false,
@@ -157,141 +225,142 @@ export class ScreenManager {
                 {
                     autoPlay: true,
                     loop: true,
-                    muted: true
+                    muted: true,
                 }
             );
 
-            // Manejar errores de carga de video
-            this.videoTexture.video.onerror = () => {
-                console.warn(`⚠️ No se pudo cargar el video: ${project.videoUrl}`);
-                console.log('ℹ️ Agrega tus videos en public/videos/ - Ver VIDEOS_SETUP.md');
-                
-                // Usar color de placeholder si el video falla
-                this.material.diffuseTexture = null;
-                this.material.diffuseColor = new Color3(0.3, 0.3, 0.4);
-                this.material.emissiveColor = new Color3(0.1, 0.1, 0.15);
+            this.orientVideoTexture(videoTexture);
+
+            const swapIn = () => {
+                if (generation !== this.loadGeneration) {
+                    videoTexture.dispose();
+                    return;
+                }
+                this.swapScreenTexture(videoTexture, videoTexture, undefined);
+                this.emitMedia({ mode: 'local' });
             };
 
-            // Aplicar textura al material
-            this.material.diffuseTexture = this.videoTexture;
-            this.material.emissiveColor = new Color3(1, 1, 1);
-            this.material.backFaceCulling = false;
+            const video = videoTexture.video;
 
+            video.onerror = () => {
+                if (generation !== this.loadGeneration) return;
+                videoTexture.dispose();
+                console.warn(`⚠️ Video no disponible: ${project.videoUrl}`);
+                this.fallbackToExternalVideo(project, generation);
+            };
+
+            if (video.readyState >= 2) {
+                swapIn();
+            } else {
+                video.onloadeddata = swapIn;
+            }
         } catch (error) {
-            console.warn(`⚠️ Error al crear VideoTexture:`, error);
-            // Usar color de placeholder
-            this.material.diffuseTexture = null;
-            this.material.diffuseColor = new Color3(0.3, 0.3, 0.4);
-            this.material.emissiveColor = new Color3(0.1, 0.1, 0.15);
+            console.warn('⚠️ Error VideoTexture:', error);
+            this.fallbackToExternalVideo(project, generation);
+        }
+    }
+
+    private async loadProject(index: number): Promise<void> {
+        if (index < 0 || index >= this.projects.length) return;
+
+        const generation = ++this.loadGeneration;
+        this.currentIndex = index;
+        const project = this.projects[index];
+
+        // No limpiar la textura actual: el plano sigue visible hasta el swap
+
+        const youtubeVideoId = this.resolveYoutubeVideoId(project);
+        const canUseLocal =
+            !isYoutubeUrl(project.videoUrl) &&
+            (await localVideoExists(project.videoUrl));
+        if (generation !== this.loadGeneration) return;
+
+        if (canUseLocal) {
+            this.loadLocalVideo(project, generation);
+        } else if (youtubeVideoId) {
+            this.showYoutubeEmbed(project, youtubeVideoId, generation);
+        } else {
+            this.showPlaceholder(project, generation);
         }
 
-        // Actualizar texto lateral
-        this.updateTextPlane(project);
-
-        // Callback
-        if (this.onProjectChangeCallback) {
+        if (generation === this.loadGeneration && this.onProjectChangeCallback) {
             this.onProjectChangeCallback(project, index);
         }
     }
 
-    /**
-     * Avanzar al siguiente proyecto
-     */
     next(): void {
-        const nextIndex = (this.currentIndex + 1) % this.projects.length;
-        this.loadProject(nextIndex);
+        void this.loadProject((this.currentIndex + 1) % this.projects.length);
     }
 
-    /**
-     * Retroceder al proyecto anterior
-     */
     previous(): void {
-        const prevIndex = (this.currentIndex - 1 + this.projects.length) % this.projects.length;
-        this.loadProject(prevIndex);
+        void this.loadProject(
+            (this.currentIndex - 1 + this.projects.length) % this.projects.length
+        );
     }
 
-    /**
-     * Ir a un proyecto específico por índice
-     */
     goToProject(index: number): void {
-        this.loadProject(index);
+        void this.loadProject(index);
     }
 
-    /**
-     * Obtener el mesh de la pantalla (para raycasting y enfoque de cámara)
-     */
     getScreenMesh(): AbstractMesh {
         return this.screen;
     }
 
-    /**
-     * Obtener la posición de la pantalla
-     */
     getScreenPosition(): Vector3 {
         return this.screen.position.clone();
     }
 
-    /**
-     * Obtener el mesh completo de la pantalla (para enfoque con rotación)
-     */
     getScreen(): Mesh {
         return this.screen;
     }
 
-    /**
-     * Obtener el proyecto actual
-     */
     getCurrentProject(): Project {
         return this.projects[this.currentIndex];
     }
 
-    /**
-     * Obtener el índice actual
-     */
     getCurrentIndex(): number {
         return this.currentIndex;
     }
 
-    /**
-     * Obtener todos los proyectos
-     */
     getProjects(): Project[] {
         return this.projects;
     }
 
-    /**
-     * Registrar callback para cambios de proyecto
-     */
+    setProjects(projects: Project[], keepIndex = true): void {
+        this.projects = projects;
+        const index = keepIndex
+            ? Math.min(this.currentIndex, projects.length - 1)
+            : 0;
+        void this.loadProject(Math.max(0, index));
+    }
+
     onProjectChange(callback: (project: Project, index: number) => void): void {
         this.onProjectChangeCallback = callback;
     }
 
-    /**
-     * Reproducir/pausar video
-     */
-    toggleVideo(): void {
-        if (!this.videoTexture) return;
-        
-        const video = this.videoTexture.video;
-        if (video.paused) {
-            video.play();
-        } else {
-            video.pause();
-        }
+    onMediaStateChange(callback: (state: ScreenMediaState) => void): void {
+        this.onMediaStateChangeCallback = callback;
     }
 
-    /**
-     * Limpiar recursos
-     */
+    toggleVideo(): void {
+        if (!this.videoTexture) return;
+        const video = this.videoTexture.video;
+        if (video.paused) video.play();
+        else video.pause();
+    }
+
     dispose(): void {
+        this.youtubeOverlay.dispose();
         if (this.videoTexture) {
             this.videoTexture.dispose();
+            this.videoTexture = undefined;
         }
+        if (this.screenTexture) {
+            this.screenTexture.dispose();
+            this.screenTexture = undefined;
+        }
+        this.idleTexture.dispose();
         this.screen.dispose();
-        if (this.textPlane) {
-            this.textPlane.dispose();
-        }
         this.material.dispose();
     }
 }
-

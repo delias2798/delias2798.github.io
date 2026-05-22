@@ -1,22 +1,24 @@
-import './App.css'
-import './index.css';
-import BabylonScene from './components/BabylonScene';
+import { Routes, Route } from 'react-router-dom';
+import SiteLayout from './layouts/SiteLayout';
+import HomePage from './pages/HomePage';
+import ProjectsPage from './pages/ProjectsPage';
+import AboutPage from './pages/AboutPage';
+import ContactPage from './pages/ContactPage';
+import BabylonPortfolioPage from './pages/BabylonPortfolioPage';
+import './styles/site/site.css';
 
 function App() {
-  return (
-    <div className="app-container">
-      <BabylonScene />
-      <div className="welcome-overlay">
-        <h1>Portfolio VR/XR</h1>
-        <p>Explora mis proyectos en realidad virtual y aumentada</p>
-        <div className="instructions">
-          <p>🖱️ <strong>Click Izquierdo:</strong> Ver pantallas/proyectos</p>
-          <p>🎮 <strong>Click Derecho:</strong> Agarrar y mover objetos</p>
-          <p>🔄 <strong>Drag:</strong> Rotar cámara</p>
-        </div>
-      </div>
-    </div>
-  );
+    return (
+        <Routes>
+            <Route element={<SiteLayout />}>
+                <Route index element={<HomePage />} />
+                <Route path="projects" element={<ProjectsPage />} />
+                <Route path="about" element={<AboutPage />} />
+                <Route path="contact" element={<ContactPage />} />
+            </Route>
+            <Route path="babylonPortfolio" element={<BabylonPortfolioPage />} />
+        </Routes>
+    );
 }
 
 export default App;

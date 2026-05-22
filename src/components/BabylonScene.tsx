@@ -18,35 +18,51 @@ import "@babylonjs/loaders/glTF";
 import HavokPhysics from "@babylonjs/havok";
 import { CameraController } from "../babylon/CameraController";
 import { ScreenManager } from "../babylon/ScreenManager";
-import { InteractiveObjectsManager } from "../babylon/InteractiveObjects";
-import { projects } from "../data/projects";
+import { setupPortfolioEnvironment } from "../babylon/SceneEnvironment";
+import { getProjects } from "../data/projects";
+import { SceneConfig } from "../config/scene.config";
+import type { Locale } from "../types/Locale";
 import type { Project } from "../types/Project";
+import type { ScreenMediaState } from "../types/ScreenMedia";
 import ProjectOverlay from "./ProjectOverlay";
+import "../styles/BabylonScene.css";
 
-const BabylonScene: React.FC = () => {
+interface BabylonSceneProps {
+    locale: Locale;
+}
+
+const BabylonScene: React.FC<BabylonSceneProps> = ({ locale }) => {
+    const localizedProjects = getProjects(locale);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const sceneWrapperRef = useRef<HTMLDivElement>(null);
     const [currentProject, setCurrentProject] = useState<Project | null>(null);
     const [currentProjectIndex, setCurrentProjectIndex] = useState<number>(0);
     const [isOverlayVisible, setIsOverlayVisible] = useState<boolean>(false);
+    const [screenMedia, setScreenMedia] = useState<ScreenMediaState>({
+        mode: 'placeholder',
+    });
     
-    // Referencias para acceder a los managers desde event handlers
     const sceneRef = useRef<Scene | null>(null);
+    const engineRef = useRef<Engine | null>(null);
     const cameraControllerRef = useRef<CameraController | null>(null);
     const screenManagerRef = useRef<ScreenManager | null>(null);
 
     useEffect(() => {
-        if (!canvasRef.current) return;
+        if (!canvasRef.current || !sceneWrapperRef.current) return;
 
         const initScene = async () => {
             try {
                 const engine = new Engine(canvasRef.current!, true);
         const scene = new Scene(engine);
                 sceneRef.current = scene;
+                engineRef.current = engine;
 
-                // Color de fondo más visible (azul oscuro en lugar de gris)
-                scene.clearColor = new Color4(0.1, 0.1, 0.2, 1);
+                scene.clearColor = new Color4(0.05, 0.05, 0.08, 1);
 
                 console.log('🎬 Iniciando escena BabylonJS...');
+
+                setupPortfolioEnvironment(scene);
+                console.log('🌅 HDR environment:', SceneConfig.environment.hdrUrl);
 
                 // Configurar física Havok
                 try {
@@ -63,9 +79,9 @@ const BabylonScene: React.FC = () => {
             // Cámara
             const camera = new ArcRotateCamera(
                 "camera",
-                -Math.PI / 2, // Rotación horizontal
-                Math.PI / 2.5, // Rotación vertical (más bajo)
-                15, // Distancia más cercana
+                Math.PI / 2, // +180° respecto a antes: frente de la pantalla (no la parte trasera)
+                Math.PI / 2.5,
+                15,
                 new Vector3(0, 1, 0), // Apuntar ligeramente arriba
                 scene
             );
@@ -74,8 +90,9 @@ const BabylonScene: React.FC = () => {
             camera.upperRadiusLimit = 30;
             camera.lowerBetaLimit = 0.1;
             camera.upperBetaLimit = (Math.PI / 2) * 0.99;
-            camera.wheelPrecision = 50; // Hacer zoom más suave
-            camera.panningSensibility = 0; // Deshabilitar panning
+            camera.panningSensibility = 0;
+            // Sin zoom con scroll (rueda solo no acerca/aleja la cámara)
+            camera.inputs.removeByType('ArcRotateCameraMouseWheelInput');
 
             // Iluminación mejorada
             const hemisphericLight = new HemisphericLight(
@@ -83,38 +100,52 @@ const BabylonScene: React.FC = () => {
                 new Vector3(0, 1, 0),
                 scene
             );
-            hemisphericLight.intensity = 0.7;
+            hemisphericLight.intensity = SceneConfig.lighting.hemispheric.intensity;
 
-            // Luz direccional para mejor contraste
             const directionalLight = new HemisphericLight(
                 "directionalLight",
                 new Vector3(1, 1, -1),
                 scene
             );
-            directionalLight.intensity = 0.5;
+            directionalLight.intensity = SceneConfig.lighting.directional.intensity;
 
-            // Crear plano de piso con física (bajado para no traslaparse con furniture.glb)
+            // Piso visual (sin física — evita que el mesh se mueva al colisionar)
             const ground = MeshBuilder.CreateGround(
                 "ground",
                 { width: 30, height: 30 },
                 scene
             );
-            const groundMaterial = new StandardMaterial("groundMaterial", scene);
+            const groundMaterial = new StandardMaterial("portfolioGroundMaterial", scene);
             groundMaterial.diffuseColor = new Color3(0.2, 0.2, 0.25);
             groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
+            groundMaterial.emissiveColor = new Color3(0.04, 0.04, 0.05);
+            groundMaterial.backFaceCulling = true;
+            if (scene.environmentTexture) {
+                groundMaterial.reflectionTexture = scene.environmentTexture;
+                groundMaterial.reflectionTexture.level = 0.35;
+            }
             ground.material = groundMaterial;
-            ground.position.y = -0.5; // Bajado para evitar Z-fighting con furniture.glb
+            ground.position.y = 0;
             ground.receiveShadows = true;
-            ground.isPickable = false; // No interferir con raycasting de objetos interactivos
+            ground.isPickable = false;
 
-            // Agregar física al piso (solo si Havok está disponible)
+            // Colisionador estático invisible (no comparte mesh con el piso visual)
             if (scene.getPhysicsEngine()) {
-                new PhysicsAggregate(
-                    ground,
-                    PhysicsShapeType.BOX,
-                    { mass: 0, restitution: 0.5, friction: 0.5 },
+                const groundCollider = MeshBuilder.CreateBox(
+                    "groundPhysicsCollider",
+                    { width: 30, height: 0.15, depth: 30 },
                     scene
                 );
+                groundCollider.position.y = -0.075;
+                groundCollider.isVisible = false;
+                groundCollider.isPickable = false;
+                const groundPhysics = new PhysicsAggregate(
+                    groundCollider,
+                    PhysicsShapeType.BOX,
+                    { mass: 0, friction: 0.8, restitution: 0.1 },
+                    scene
+                );
+                groundPhysics.body.setMotionType(0);
             }
 
             // Agregar objeto de referencia visible (para debug)
@@ -157,7 +188,11 @@ const BabylonScene: React.FC = () => {
 
             // Inicializar Screen Manager
             console.log('🎬 Inicializando Screen Manager...');
-            const screenManager = new ScreenManager(scene, projects);
+            const screenManager = new ScreenManager(
+                scene,
+                localizedProjects,
+                sceneWrapperRef.current!
+            );
             screenManagerRef.current = screenManager;
 
             // Callback cuando cambia el proyecto
@@ -166,54 +201,36 @@ const BabylonScene: React.FC = () => {
                 setCurrentProjectIndex(index);
             });
 
+            screenManager.onMediaStateChange((state) => {
+                setScreenMedia(state);
+            });
+
             // Establecer proyecto inicial
             setCurrentProject(screenManager.getCurrentProject());
             setCurrentProjectIndex(screenManager.getCurrentIndex());
 
-            // Inicializar Interactive Objects Manager (solo si hay física)
-            let interactiveObjects: InteractiveObjectsManager | null = null;
-            if (scene.getPhysicsEngine()) {
-                try {
-                    console.log('🎮 Inicializando objetos interactivos...');
-                    interactiveObjects = new InteractiveObjectsManager(scene);
-                    await interactiveObjects.createObjects();
-                    console.log('✅ Objetos interactivos creados');
-                } catch (error) {
-                    console.error('❌ Error creando objetos interactivos:', error);
-                }
-            } else {
-                console.warn('⚠️ No hay física disponible, objetos interactivos deshabilitados');
-            }
+            // Objetos agarrar/soltar desactivados por ahora (InteractiveObjectsManager)
 
-            // Setup click handler para enfocar pantalla (SOLO BOTÓN IZQUIERDO)
             scene.onPointerObservable.add((pointerInfo) => {
-                if (pointerInfo.type === 2) { // POINTERDOWN
-                    // Solo procesar botón izquierdo (botón derecho es para objetos)
+                if (pointerInfo.type === 2) {
                     const pointerEvent = pointerInfo.event as PointerEvent;
                     if (pointerEvent && pointerEvent.button !== 0) {
-                        return; // Ignorar botón derecho y medio
+                        return;
                     }
 
                     const pickResult = scene.pick(scene.pointerX, scene.pointerY);
 
                     if (pickResult.hit && pickResult.pickedMesh) {
-                        // Verificar si es un objeto interactivo
-                        const isInteractiveObject = interactiveObjects && 
-                            interactiveObjects.getObjectMeshes().includes(pickResult.pickedMesh);
-                        
-                        if (isInteractiveObject) {
-                            // No hacer nada, los objetos interactivos tienen prioridad
-                            return;
-                        }
-
-                        // Verificar si clickeó en la pantalla
                         if (pickResult.pickedMesh === screenManager.getScreenMesh()) {
                             if (cameraController.isNormal()) {
-                                // Enfocar pantalla (pasar el mesh completo para calcular rotación)
                                 const screenMesh = screenManager.getScreen();
-                                cameraController.focusOn(screenMesh, 5, () => {
-                                    setIsOverlayVisible(true);
-                                });
+                                cameraController.focusOn(
+                                    screenMesh,
+                                    SceneConfig.camera.focusDistance,
+                                    () => {
+                                        setIsOverlayVisible(true);
+                                    }
+                                );
                             }
                         } else if (cameraController.isFocused()) {
                             // Clickeó fuera de la pantalla
@@ -230,14 +247,6 @@ const BabylonScene: React.FC = () => {
                 }
             };
             window.addEventListener("keydown", handleKeyDown);
-
-            // Setup listener para scroll
-            const handleWheel = (event: WheelEvent) => {
-                if (event.deltaY > 0 && cameraController.isFocused()) {
-                    exitFocusMode();
-                }
-            };
-            window.addEventListener("wheel", handleWheel);
 
             // Función para salir del modo focus
             const exitFocusMode = () => {
@@ -287,13 +296,11 @@ const BabylonScene: React.FC = () => {
         return () => {
             window.removeEventListener("resize", handleResize);
                 window.removeEventListener("keydown", handleKeyDown);
-                window.removeEventListener("wheel", handleWheel);
                 screenManager.dispose();
-                if (interactiveObjects) {
-                    interactiveObjects.dispose();
-                }
             scene.dispose();
             engine.dispose();
+            engineRef.current = null;
+            sceneRef.current = null;
             };
 
             } catch (error) {
@@ -319,6 +326,15 @@ const BabylonScene: React.FC = () => {
         };
     }, []);
 
+    useEffect(() => {
+        if (screenManagerRef.current) {
+            screenManagerRef.current.setProjects(getProjects(locale));
+            const project = screenManagerRef.current.getCurrentProject();
+            setCurrentProject(project);
+            setCurrentProjectIndex(screenManagerRef.current.getCurrentIndex());
+        }
+    }, [locale]);
+
     // Handlers para el overlay
     const handleCloseOverlay = () => {
         setIsOverlayVisible(false);
@@ -327,38 +343,46 @@ const BabylonScene: React.FC = () => {
         }
     };
 
-    const handleNext = () => {
-        if (screenManagerRef.current) {
-            screenManagerRef.current.next();
-        }
-    };
+    const changeProject = (direction: 'next' | 'prev') => {
+        if (!screenManagerRef.current) return;
 
-    const handlePrevious = () => {
-        if (screenManagerRef.current) {
+        // Mantener zoom y panel abiertos; solo cambia video + datos del overlay
+        if (direction === 'next') {
+            screenManagerRef.current.next();
+        } else {
             screenManagerRef.current.previous();
         }
     };
 
+    const handleNext = () => changeProject('next');
+    const handlePrevious = () => changeProject('prev');
+
+    const overlayYoutubeId =
+        isOverlayVisible &&
+        screenMedia.youtubeVideoId &&
+        (screenMedia.mode === 'youtube-embed' ||
+            screenMedia.mode === 'youtube-poster')
+            ? screenMedia.youtubeVideoId
+            : null;
+
     return (
-        <>
+        <div ref={sceneWrapperRef} className="babylon-scene-wrapper">
         <canvas
             ref={canvasRef}
-            style={{
-                width: "100vw",
-                height: "100vh",
-                display: "block",
-            }}
+            className="babylon-canvas"
         />
             <ProjectOverlay
                 project={currentProject}
                 isVisible={isOverlayVisible}
+                locale={locale}
+                youtubeVideoId={overlayYoutubeId}
                 onClose={handleCloseOverlay}
                 onNext={handleNext}
                 onPrevious={handlePrevious}
                 currentIndex={currentProjectIndex}
-                totalProjects={projects.length}
+                totalProjects={localizedProjects.length}
             />
-        </>
+        </div>
     );
 };
 

@@ -1,0 +1,72 @@
+.primary-nav {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+
+.primary-nav a {
+    font-size: clamp(0.8rem, 1vw, 0.95rem);
+    letter-spacing: 0.14em;
+    text-decoration: none;
+    color: var(--site-nav-inactive);
+    text-transform: uppercase;
+    transition: color 0.2s;
+}
+
+.primary-nav a:hover {
+    color: var(--site-text);
+}
+
+.primary-nav a.active {
+    color: var(--site-nav-active);
+    font-weight: 700;
+}
+
+.back-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background: var(--site-text);
+    color: var(--site-bg);
+    text-decoration: none;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: opacity 0.2s;
+}
+
+.back-button:hover {
+    opacity: 0.85;
+}
+
+.site-locale-bar {
+    position: fixed;
+    top: 2rem;
+    left: 5rem;
+    z-index: 100;
+}
+
+.site-locale-bar .locale-switcher button {
+    background: transparent;
+    color: var(--site-muted);
+    border: none;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    padding: 0.25rem 0.5rem;
+}
+
+.site-locale-bar .locale-switcher button.active {
+    color: var(--site-text);
+    font-weight: 700;
+}
+
+.site-locale-bar .locale-switcher button:hover {
+    color: var(--site-text);
+    border-color: transparent;
+}

@@ -1,4 +1,13 @@
-import { Scene, ArcRotateCamera, Vector3, Animation, EasingFunction, CircleEase, AbstractMesh } from '@babylonjs/core';
+import {
+    Scene,
+    ArcRotateCamera,
+    Vector3,
+    Animation,
+    EasingFunction,
+    CircleEase,
+    AbstractMesh,
+    type Animatable,
+} from '@babylonjs/core';
 
 export type CameraState = 'normal' | 'focused';
 
@@ -6,18 +15,17 @@ export class CameraController {
     private camera: ArcRotateCamera;
     private scene: Scene;
     private state: CameraState = 'normal';
-    
-    // Posición y target originales de la cámara
-    private originalAlpha: number;
-    private originalBeta: number;
-    private originalRadius: number;
-    private originalTarget: Vector3;
+    private activeAnimations: Animatable[] = [];
+
+    private readonly originalAlpha: number;
+    private readonly originalBeta: number;
+    private readonly originalRadius: number;
+    private readonly originalTarget: Vector3;
 
     constructor(camera: ArcRotateCamera, scene: Scene) {
         this.camera = camera;
         this.scene = scene;
-        
-        // Guardar estado original
+
         this.originalAlpha = camera.alpha;
         this.originalBeta = camera.beta;
         this.originalRadius = camera.radius;
@@ -25,78 +33,137 @@ export class CameraController {
     }
 
     /**
-     * Animar la cámara hacia una posición para enfocar un objeto
-     * @param target - Posición Vector3 o AbstractMesh del objeto
-     * @param distance - Distancia desde el objeto
-     * @param onComplete - Callback al terminar animación
+     * Enfoca el centro del plano de video, perpendicular a su superficie.
      */
-    focusOn(target: Vector3 | AbstractMesh, distance: number = 3, onComplete?: () => void): void {
+    focusOn(target: Vector3 | AbstractMesh, distance: number = 9, onComplete?: () => void): void {
         if (this.state === 'focused') return;
-        
+
         this.state = 'focused';
         this.camera.detachControl();
+        this.stopCameraAnimations();
 
-        let targetPosition: Vector3;
-        let optimalAlpha: number;
-        let optimalBeta: number;
+        const minR = this.camera.lowerRadiusLimit ?? 5;
+        const maxR = this.camera.upperRadiusLimit ?? 30;
+        const focusRadius = Math.max(minR, Math.min(distance, maxR));
 
-        // Si el target es un mesh, calcular posición óptima basada en su rotación
-        if (target instanceof AbstractMesh) {
-            targetPosition = target.position.clone();
+        const screenCenter = this.resolveScreenCenter(target);
+        const viewDirection = this.resolveViewDirection(target, screenCenter);
+        const cameraPosition = screenCenter.add(viewDirection.scale(focusRadius));
+        const { alpha, beta, radius } = this.sphericalFromOffset(
+            cameraPosition.subtract(screenCenter)
+        );
 
-            // Obtener la rotación Y del mesh (principal ángulo de rotación para planos)
-            const meshRotationY = target.rotation.y;
-
-            // Para estar perpendicular al plano, la cámara debe estar en el lado opuesto
-            // Si la pantalla tiene rotation.y = π, queremos alpha = 0 (cámara en +Z mirando hacia -Z)
-            // Ajustamos sumando π para estar del lado opuesto
-            optimalAlpha = meshRotationY - Math.PI/2;
-
-            // Beta: ligeramente elevado para mejor vista
-            optimalBeta = Math.PI / 2.2; // ~82° - ligeramente por encima del nivel
-
-            console.log('📐 Enfocando mesh:', target.name);
-            console.log('   Posición mesh:', targetPosition);
-            console.log('   Rotación Y del mesh:', (meshRotationY * 180 / Math.PI).toFixed(1), '°');
-            console.log('   Alpha calculado:', (optimalAlpha * 180 / Math.PI).toFixed(1), '°');
-            console.log('   Beta calculado:', (optimalBeta * 180 / Math.PI).toFixed(1), '°');
-            console.log('   → Cámara se posicionará perpendicular al plano');
-        } else {
-            // Si es solo un Vector3, usar método original
-            targetPosition = target.clone();
-            const direction = targetPosition.subtract(this.camera.position).normalize();
-            
-            optimalAlpha = Math.atan2(direction.x, direction.z);
-            optimalBeta = Math.acos(direction.y);
-        }
-
-        // Crear animaciones
-        this.animateCamera(optimalAlpha, optimalBeta, distance, targetPosition, onComplete);
+        this.animateCamera(
+            this.shortestAlpha(this.camera.alpha, alpha),
+            beta,
+            radius,
+            screenCenter,
+            onComplete
+        );
     }
 
-    /**
-     * Volver a la posición original de la cámara
-     */
     reset(onComplete?: () => void): void {
         if (this.state === 'normal') return;
-        
+
         this.state = 'normal';
-        
+        this.stopCameraAnimations();
+
         this.animateCamera(
             this.originalAlpha,
             this.originalBeta,
             this.originalRadius,
-            this.originalTarget,
+            this.originalTarget.clone(),
             () => {
-                this.camera.attachControl(this.scene.getEngine().getRenderingCanvas()!, true);
-                if (onComplete) onComplete();
+                this.camera.setTarget(this.originalTarget.clone());
+                this.camera.alpha = this.originalAlpha;
+                this.camera.beta = this.originalBeta;
+                this.camera.radius = this.originalRadius;
+
+                const canvas = this.scene.getEngine().getRenderingCanvas();
+                if (canvas) {
+                    this.camera.attachControl(canvas, true);
+                }
+                onComplete?.();
             }
         );
     }
 
+    private resolveScreenCenter(target: Vector3 | AbstractMesh): Vector3 {
+        if (target instanceof AbstractMesh) {
+            target.computeWorldMatrix(true);
+            return target.getAbsolutePosition().clone();
+        }
+        return target.clone();
+    }
+
     /**
-     * Crear animaciones suaves para la cámara
+     * Normal del plano hacia el lado desde el que ya se ve la pantalla (misma hemisferio que la cámara actual).
      */
+    private resolveViewDirection(
+        target: Vector3 | AbstractMesh,
+        screenCenter: Vector3
+    ): Vector3 {
+        const towardViewer = this.camera.position.subtract(screenCenter);
+        if (towardViewer.lengthSquared() > 1e-6) {
+            if (target instanceof AbstractMesh) {
+                target.computeWorldMatrix(true);
+                const normal = target.getDirection(Vector3.Forward()).normalize();
+                return Vector3.Dot(normal, towardViewer) >= 0
+                    ? normal
+                    : normal.scale(-1);
+            }
+            return towardViewer.normalize();
+        }
+
+        if (target instanceof AbstractMesh) {
+            target.computeWorldMatrix(true);
+            return target.forward.normalize();
+        }
+        return new Vector3(0, 0, 1);
+    }
+
+    /** Evita que alpha anime dando la vuelta por el lado opuesto (misma posición, otro hemisferio). */
+    private shortestAlpha(from: number, to: number): number {
+        let result = to;
+        const twoPi = Math.PI * 2;
+        while (result - from > Math.PI) {
+            result -= twoPi;
+        }
+        while (result - from < -Math.PI) {
+            result += twoPi;
+        }
+        return result;
+    }
+
+    /** Convierte posición relativa al target en alpha/beta/radius de ArcRotateCamera */
+    private sphericalFromOffset(offset: Vector3): {
+        alpha: number;
+        beta: number;
+        radius: number;
+    } {
+        const radius = offset.length();
+        if (radius < 0.001) {
+            return {
+                alpha: this.camera.alpha,
+                beta: this.camera.beta,
+                radius: 0.001,
+            };
+        }
+
+        const beta = Math.acos(Math.max(-1, Math.min(1, offset.y / radius)));
+        const alpha = Math.atan2(offset.z, offset.x);
+
+        return { alpha, beta, radius };
+    }
+
+    private stopCameraAnimations(): void {
+        for (const anim of this.activeAnimations) {
+            anim.stop();
+        }
+        this.activeAnimations = [];
+        this.scene.stopAnimation(this.camera);
+    }
+
     private animateCamera(
         toAlpha: number,
         toBeta: number,
@@ -105,93 +172,41 @@ export class CameraController {
         onComplete?: () => void
     ): void {
         const frameRate = 60;
-        const duration = 60; // 1 segundo
-
-        // Easing function para animación suave
+        const duration = 45;
         const easingFunction = new CircleEase();
         easingFunction.setEasingMode(EasingFunction.EASINGMODE_EASEINOUT);
 
-        // Animación Alpha
-        const alphaAnimation = Animation.CreateAndStartAnimation(
-            'cameraAlpha',
-            this.camera,
-            'alpha',
-            frameRate,
-            duration,
-            this.camera.alpha,
-            toAlpha,
-            Animation.ANIMATIONLOOPMODE_CONSTANT,
-            easingFunction
-        );
+        const start = (property: string, from: number, to: number) => {
+            const anim = Animation.CreateAndStartAnimation(
+                `cam_${property}_${Date.now()}`,
+                this.camera,
+                property,
+                frameRate,
+                duration,
+                from,
+                to,
+                Animation.ANIMATIONLOOPMODE_CONSTANT,
+                easingFunction
+            );
+            if (anim) this.activeAnimations.push(anim);
+            return anim;
+        };
 
-        // Animación Beta
-        Animation.CreateAndStartAnimation(
-            'cameraBeta',
-            this.camera,
-            'beta',
-            frameRate,
-            duration,
-            this.camera.beta,
-            toBeta,
-            Animation.ANIMATIONLOOPMODE_CONSTANT,
-            easingFunction
-        );
+        start('alpha', this.camera.alpha, toAlpha);
+        start('beta', this.camera.beta, toBeta);
+        start('radius', this.camera.radius, toRadius);
+        start('target.x', this.camera.target.x, toTarget.x);
+        start('target.y', this.camera.target.y, toTarget.y);
+        start('target.z', this.camera.target.z, toTarget.z);
 
-        // Animación Radius
-        Animation.CreateAndStartAnimation(
-            'cameraRadius',
-            this.camera,
-            'radius',
-            frameRate,
-            duration,
-            this.camera.radius,
-            toRadius,
-            Animation.ANIMATIONLOOPMODE_CONSTANT,
-            easingFunction
-        );
-
-        // Animación Target (x, y, z por separado)
-        Animation.CreateAndStartAnimation(
-            'cameraTargetX',
-            this.camera,
-            'target.x',
-            frameRate,
-            duration,
-            this.camera.target.x,
-            toTarget.x,
-            Animation.ANIMATIONLOOPMODE_CONSTANT,
-            easingFunction
-        );
-
-        Animation.CreateAndStartAnimation(
-            'cameraTargetY',
-            this.camera,
-            'target.y',
-            frameRate,
-            duration,
-            this.camera.target.y,
-            toTarget.y,
-            Animation.ANIMATIONLOOPMODE_CONSTANT,
-            easingFunction
-        );
-
-        Animation.CreateAndStartAnimation(
-            'cameraTargetZ',
-            this.camera,
-            'target.z',
-            frameRate,
-            duration,
-            this.camera.target.z,
-            toTarget.z,
-            Animation.ANIMATIONLOOPMODE_CONSTANT,
-            easingFunction
-        );
-
-        // Callback cuando termina la animación
-        if (alphaAnimation && onComplete) {
-            alphaAnimation.onAnimationEndObservable.addOnce(() => {
+        const alphaAnim = this.activeAnimations[0];
+        if (alphaAnim && onComplete) {
+            alphaAnim.onAnimationEndObservable.addOnce(() => {
+                this.camera.setTarget(toTarget.clone());
                 onComplete();
             });
+        } else if (onComplete) {
+            onComplete();
         }
     }
 
@@ -207,5 +222,3 @@ export class CameraController {
         return this.state === 'focused';
     }
 }
-
-

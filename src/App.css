@@ -1,14 +1,84 @@
-.app-container {
+.app-container.babylon-portfolio-page {
   position: relative;
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  /* Altura reservada bajo app-top-bar (← Portafolio + locale) */
+  --babylon-top-bar-clearance: 4.5rem;
+}
+
+.app-top-bar {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  right: 1rem;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  pointer-events: none;
+}
+
+.app-top-bar > * {
+  pointer-events: auto;
+}
+
+.babylon-exit-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.55rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.babylon-exit-link:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* Perfil abajo a la izquierda: no solapa con ← Portafolio (arriba izquierda) */
+.babylon-portfolio-page .profile-panel {
+  top: auto;
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  left: max(0.75rem, env(safe-area-inset-left, 0px));
+  flex-direction: column-reverse;
+}
+
+.babylon-portfolio-page .profile-panel:not(.collapsed) {
+  top: max(
+    var(--babylon-top-bar-clearance),
+    calc(1rem + 3.25rem + env(safe-area-inset-top, 0px))
+  );
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}
+
+.babylon-portfolio-page .profile-toggle {
+  margin-bottom: 0;
+  margin-top: 0.5rem;
+}
+
+.babylon-portfolio-page .profile-panel.collapsed {
+  top: auto;
+  bottom: max(1rem, env(safe-area-inset-bottom, 0px));
 }
 
 .welcome-overlay {
   position: fixed;
-  top: 2rem;
-  left: 2rem;
+  bottom: 2rem;
+  right: 2rem;
+  top: auto;
+  left: auto;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(10px);
   padding: 1.5rem 2rem;
@@ -50,6 +120,18 @@
 }
 
 @media (max-width: 768px) {
+  .babylon-portfolio-page .profile-panel:not(.collapsed) {
+    top: max(6.75rem, calc(5.75rem + env(safe-area-inset-top, 0px)));
+    bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+    left: max(0.5rem, env(safe-area-inset-left, 0px));
+    right: max(0.5rem, env(safe-area-inset-right, 0px));
+    width: calc(100vw - 1rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  }
+
+  .babylon-portfolio-page .profile-panel.collapsed {
+    bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
+
   .welcome-overlay {
     top: 1rem;
     left: 1rem;

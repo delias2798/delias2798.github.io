@@ -1,0 +1,29 @@
+.babylon-scene-wrapper {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
+}
+
+.babylon-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    touch-action: none;
+}
+
+/* YouTube anclado al plano 3D (no al panel lateral) */
+.screen-youtube-host {
+    position: absolute;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.screen-youtube-host iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    pointer-events: auto;
+}

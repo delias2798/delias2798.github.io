@@ -1,0 +1,117 @@
+.site-root {
+    min-height: 100dvh;
+    background: var(--site-bg);
+    color: var(--site-text);
+    font-family: var(--site-font);
+}
+
+.site-layout {
+    position: relative;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+}
+
+.site-layout__nav {
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    z-index: 100;
+}
+
+.site-layout__back {
+    position: fixed;
+    top: 2rem;
+    left: 2rem;
+    z-index: 100;
+}
+
+.site-page {
+    flex: 1;
+    padding: 6rem 2.5rem 3rem;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.site-page--home {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 100dvh;
+    padding: 2rem 2.5rem;
+    max-width: none;
+}
+
+.site-page--centered {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: calc(100dvh - 4rem);
+}
+
+.site-home-header {
+    z-index: 10;
+}
+
+.site-home-header__role {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--site-muted);
+    margin: 0 0 0.25rem;
+    text-transform: uppercase;
+}
+
+.site-home-header__name {
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.site-home-hero-wrap {
+    position: relative;
+    flex: 1;
+    min-height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.site-meta-footer {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--site-border);
+    z-index: 10;
+}
+
+@media (max-width: 768px) {
+    .site-meta-footer {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .site-layout__nav {
+        top: 1rem;
+        right: 1rem;
+    }
+
+    .site-layout__back {
+        top: 1rem;
+        left: 1rem;
+    }
+
+    .site-page {
+        padding: 5rem 1.25rem 2rem;
+    }
+
+    .site-layout__credit {
+        padding: 1rem 1.25rem 1.5rem;
+    }
+}

@@ -1,0 +1,30 @@
+.locale-switcher {
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+}
+
+.locale-switcher button {
+    border: none;
+    background: transparent;
+    color: #aaa;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.35rem 0.65rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+}
+
+.locale-switcher button.active {
+    background: rgba(99, 102, 241, 0.35);
+    color: #e0e7ff;
+}
+
+.locale-switcher button:hover:not(.active) {
+    color: #fff;
+}
