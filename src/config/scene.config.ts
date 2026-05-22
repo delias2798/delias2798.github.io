@@ -84,9 +84,11 @@ export const SceneConfig = {
     // Entorno HDR (IBL + skybox)
     environment: {
         hdrUrl: '/ferndale_studio_12_4k.hdr',
+        cubemapSize: 512,
         intensity: 1,
-        skyboxScale: 1000,
-        skyboxBlur: 0.35,
+        skyboxScale: 2000,
+        /** Rotación del panorama (radianes), p. ej. Math.PI si se ve girado */
+        skyRotationY: 0,
     },
 
     // Configuración de Iluminación

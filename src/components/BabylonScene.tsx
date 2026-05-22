@@ -7,8 +7,6 @@ import {
     Vector3,
     // SceneLoader, // Comentado temporalmente (furniture.glb desactivado)
     MeshBuilder,
-    StandardMaterial,
-    Color3,
     Color4,
     HavokPlugin,
     PhysicsAggregate,
@@ -18,7 +16,10 @@ import "@babylonjs/loaders/glTF";
 import HavokPhysics from "@babylonjs/havok";
 import { CameraController } from "../babylon/CameraController";
 import { ScreenManager } from "../babylon/ScreenManager";
-import { setupPortfolioEnvironment } from "../babylon/SceneEnvironment";
+import {
+    createEnvironmentGroundMaterial,
+    setupPortfolioEnvironment,
+} from "../babylon/SceneEnvironment";
 import { getProjects } from "../data/projects";
 import { SceneConfig } from "../config/scene.config";
 import type { Locale } from "../types/Locale";
@@ -57,12 +58,15 @@ const BabylonScene: React.FC<BabylonSceneProps> = ({ locale }) => {
                 sceneRef.current = scene;
                 engineRef.current = engine;
 
-                scene.clearColor = new Color4(0.05, 0.05, 0.08, 1);
-
                 console.log('🎬 Iniciando escena BabylonJS...');
 
-                setupPortfolioEnvironment(scene);
-                console.log('🌅 HDR environment:', SceneConfig.environment.hdrUrl);
+                try {
+                    await setupPortfolioEnvironment(scene);
+                    console.log('🌅 HDR cargado:', SceneConfig.environment.hdrUrl);
+                } catch (hdrError) {
+                    console.error('❌ HDR no cargó; usando fondo oscuro:', hdrError);
+                    scene.clearColor = new Color4(0.08, 0.09, 0.12, 1);
+                }
 
                 // Configurar física Havok
                 try {
@@ -115,15 +119,10 @@ const BabylonScene: React.FC<BabylonSceneProps> = ({ locale }) => {
                 { width: 30, height: 30 },
                 scene
             );
-            const groundMaterial = new StandardMaterial("portfolioGroundMaterial", scene);
-            groundMaterial.diffuseColor = new Color3(0.2, 0.2, 0.25);
-            groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
-            groundMaterial.emissiveColor = new Color3(0.04, 0.04, 0.05);
-            groundMaterial.backFaceCulling = true;
-            if (scene.environmentTexture) {
-                groundMaterial.reflectionTexture = scene.environmentTexture;
-                groundMaterial.reflectionTexture.level = 0.35;
-            }
+            const groundMaterial = createEnvironmentGroundMaterial(
+                scene,
+                'portfolioGroundMaterial',
+            );
             ground.material = groundMaterial;
             ground.position.y = 0;
             ground.receiveShadows = true;
